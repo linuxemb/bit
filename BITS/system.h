@@ -365,13 +365,13 @@ typedef struct
 
 typedef void (*function)(void);
 
-typedef struct
-{
-  OStypeTFP tFP;
-  OStypeTcbP tcbP;
-  OStypePrio prio;
-  Uint8 watchdogMask;
-} threadDefn;
+//typedef struct
+//{
+//  OStypeTFP tFP;
+//  OStypeTcbP tcbP;
+//  OStypePrio prio;
+//  Uint8 watchdogMask;
+//} threadDefn;
 
 typedef enum
 {
@@ -715,7 +715,7 @@ extern void boosterLatchClear(void);
 extern void flashResp(void);
 
 extern   swatPack pack;
-extern __data20 tempPack mtempPack;
+
 
 static bool heaterFlag;
 
