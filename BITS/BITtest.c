@@ -1,22 +1,54 @@
+
+/*******************************************************************
+BitTest.c
+
+DESCRIPTION:-the bit test functions and algorithms, include only 2 public 
+functions: BitInitialize(TestData_t *data) and runBit( TestData_t *data) 
+and  lots of private functions to run different BIT tests.
+
+PROJECT:  6T
+
+*******************************************************************/
+
 #include "bitData.h"
+#include "BITtestConf.h"
+#include "BITtestDriver.h"
 
 #include "stdbool.h"
 #include <stdint.h>
 #include "stdio.h"
 #include "discretes.h"
 #include "ApplicationTypes.h"
-TestData_t data;
+#include <math.h>
+#include <assert.h>
+#include "ADC.h"
 
-void setTestData(TestData_t data)
+PUBLIC OnOff_t DiscreteRead(DiscreteChannel_t channel); 
+
+PRIVATE  void setTestData(TestData_t  *data)
 {
-#ifdef BIT_FETON_TEST
-	data.fetonbit.adcStackV = 26;
-	data.fetonbit.adcTerminalFuseV = 27;
+#ifdef DFETONBIT
+
+	data->fetonbit.adcStackV = PCSIM ? STACKV : ADCReadVoltage(TerminalVSense);
+	data->fetonbit.adcTerminalFuseV = PCSIM ? TERMINALV : ADCReadVoltage(VStackVSense);
+	// retrieve the state of FET
+	data->fetonbit.state = PCSIM ? discharge : DiscreteRead(MSP_DSG); ;  // for DSG BITC ON test
+			
 #endif
 
-#ifdef BIT_IMB_TEST
-	data.cellImbalance.cellVmin = 3.1;
+ #ifdef CFETONBIT
+
+	data->fetonbit.adcStackV = PCSIM ? STACKV : ADCReadVoltage(TerminalVSense);
+	data->fetonbit.adcTerminalFuseV = PCSIM ? TERMINALV : ADCReadVoltage(VStackVSense);
+	// retrieve the state of FET
+	data->fetonbit.state = PCSIM ? charge : DiscreteRead(MSP_CHG);  // for CFG BIT ON  test
+
+#endif 
+#ifdef IMBBIT
+	data->cellimb.cellVmin = CELLVMIN; 
+	data->cellimb.cellVmax = CELLVMAX;
 #endif
+
 #ifdef BIT_CELLCALIBRATION_TEST
 
 #endif
@@ -32,17 +64,25 @@ void setTestData(TestData_t data)
 #endif
 }
 
-// helper function prototype in 6T
-PUBLIC OnOff_t DiscreteRead(DiscreteChannel_t channel)
-{
-	return On;
-}
+
  // Framework======================================================
+PUBLIC void BitInitialize(TestData_t *data)
+{
+	data->fetonbit.adcStackV = (Voltage_t)DEFAULT;
+	data ->fetonbit.adcTerminalFuseV = (Voltage_t)DEFAULT;
+	data ->cellimb.cellVmax = (Voltage_t)DEFAULT;
+	data ->cellimb.cellVmin = (Voltage_t)DEFAULT;
+	// set all test result to be pass at init
+	data ->result_type.canTestResult = 0;
+	data ->result_type.cellImbanceTestResult = 0;
+	data->result_type.crctestResult = 0;
+	data->result_type.FETsONTestResult = 0;
+	data->result_type.heaterTestResult = 0;
+
+
+}
 
  
-
-
-
 
  /*********************************************************************
 * Function:        FETsOnBIT
@@ -56,77 +96,54 @@ PUBLIC OnOff_t DiscreteRead(DiscreteChannel_t channel)
 ********************************************************************/
 
 
- uint8_t fetCheck(state_t which)
- {
-	 uint8_t ret;
 
-	 if (which == discharge)
-	 {
-		ret =  DiscreteRead(MSP_DSG); 
-	 }
-	 else
-	 {
-		 ret = DiscreteRead(MSP_CHG);
-
-	 }
-
-	 return (ret);
- }
  
 
-void  FETsON(TestData_t data)
+PRIVATE  void  FETsON(TestData_t *data )
  {
 	printf("FETsOn \n");
+
+	// Make sure the user has set up the necessary test input data, this will seperate the failure cased by improper usage of BITtest module
+	
+	assert(data->fetonbit.adcStackV != (voltage_t)DEFAULT);
+	//printf("assert failed \n");
   static uint8_t failureCounts = 0;
 
-  uint8_t fetsVoltDrop = abs(data.fetonbit.adcTerminalFuseV - data.fetonbit.adcStackV);  // mV
+  voltage_t fetsVoltDrop = abs(data-> fetonbit.adcTerminalFuseV - data -> fetonbit.adcStackV);  // mV
 
   if (fetsVoltDrop > FETS_VOLT_DROP_MAX)
   {
-    if ((fetCheck(charge)) && (fetCheck(discharge)))                  // Both FETs must be ON!
-    {
+    //if ((fetCheck(charge)) && (fetCheck(discharge)))                  // Both FETs must be ON!
+	  if ((data->fetonbit.state == charge) && (data ->fetonbit.state = discharge))
+	  {
       if (++failureCounts > 2)
       {
-
-		  data.result_type.FETsONTestResult = 1;
-      /*  if (OSReadEFlag(EF_EVENTS2_P) & event_chargingActive)
-        {
-          OSSetEFlag(EF_EVENTS2_P, event_dsgFetERR);
-		 // LogAlarm( event_dsgFetERR, AlarmON, 0 );
-        }
-		*/
-        /*else if (OSReadEFlag(EF_EVENTS2_P) & event_dischargingActive)
-        {
-          OSSetEFlag(EF_EVENTS2_P, event_chgFetERR);
-		//  LogAlarm( event_chgFetERR, AlarmON, 0 );
-      */  }
+		  data -> result_type.FETsONTestResult = 1;
+      }
         else
         {
-          failureCounts = 0;
-		  
-
-        }
+          failureCounts = 0; 
+		}
       }
     }
     else
     {
-      failureCounts = 0;
-	  
+      failureCounts = 0;	  
     }
   
   }
  
 
-
-
-void runBIT(TestData_t data)
+PUBLIC void runBIT( TestData_t *data )
 {
 	  printf("top runBIT   \n");
-	
+	  setTestData( data );
+
+
 	// Configurable by add or remove the function pointer in the array 
 	//fp func[2] = { &FETsOn, &cellImb };
    
-	FETsON(data);
+	//FETsON( data );
 
 	/*for (uint8_t i = 0; i < 2; i++)
 	{
@@ -139,8 +156,8 @@ void runBIT(TestData_t data)
 
 
 
-
-void cellImb(TestData_t data)
+//Cell Imbalnace check
+PRIVATE  void cellImb(TestData_t data)
 {
 
 
@@ -159,6 +176,5 @@ void cellImb(TestData_t data)
 
 //
 //Cell Calibration check
-//Cell Imbalnace check
-//
+
 //chargeEffieiencyERR
